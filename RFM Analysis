@@ -1,0 +1,89 @@
+-- Customer segmentation: RFM analysis for electricity bills
+
+-- Step 1: RFM for each customers
+
+with table_rfm as(
+    select customer_id
+        , recency = datediff( day, max(transaction_date), '2018-12-31') -- day of the most recent orders to 31-12-2018
+        , frequency = count (order_id) -- how many orders
+        , monetary = sum(cast(final_price as bigint)) -- total payments
+    from (
+    select * from payment_history_17 union select * from payment_history_18) as payment_his
+    join product pro 
+    on pro.product_number = payment_his.product_id
+    where sub_category = 'Electricity' and message_id = 1 -- only for successful orders
+    group by customer_id
+)
+-- Step 2: percentile position
+
+, table_rank as(
+    select *
+        , PERCENT_RANK() over (order by recency asc) as r_rank
+        , PERCENT_RANK() over (order by frequency desc) as f_rank
+        , PERCENT_RANK() over (order by monetary desc) as m_rank
+    from table_rfm
+)
+
+-- Step 3: categorize by 4 tiers
+
+, table_tier as (
+    select *
+        , case when r_rank <= 0.25 then 1
+            when r_rank <= 0.5 then 2
+            when r_rank <= 0.75 then 3
+            else 4 end as r_tier
+        , case when f_rank <= 0.25 then 1
+            when f_rank <= 0.5 then 2
+            when f_rank <= 0.75 then 3
+            else 4 end as f_tier
+        , case when m_rank <= 0.25 then 1
+            when m_rank <= 0.5 then 2
+            when m_rank <= 0.75 then 3
+            else 4 end as m_tier
+    from table_rank
+)
+, table_score as (
+    select *
+        , concat (r_tier, f_tier, m_tier) as rfm_score
+    from table_tier
+)
+
+-- Step 4: segmentation by customers' behaviors
+
+, table_segment as (
+    select *
+        , case 
+            when rfm_score = 111 then 'VIP customers'
+            when rfm_score like '[3-4][3-4][1-4]' then 'Bad customers'
+            when rfm_score like '[3-4]2[1-4]' then 'Customers left'
+            when rfm_score like '21[1-4]' then 'Almost lost customers'
+            when rfm_score like '11[1-4]' then 'Loyal customers'
+            when rfm_score like '[1-2][1-3]1' then 'Big spenders'
+            when rfm_score like '[1-2]4[1-4]' then 'New customers'
+            when rfm_score like '[3-4]1[1-4]' then 'Hibernating'
+            when rfm_score like '[1-2][2-3][2-4]' then 'Potential loyalists'
+            else 'unknown' end as segment
+    from table_score
+)
+, table_seg_customers as(
+    select segment 
+        , count(customer_id) number_customers
+    from table_segment
+    group by segment
+)
+-- Save as temporary table_local
+select *
+    , cast (number_customers as decimal) / sum(number_customers) over () ratio
+INTO #local_table
+from table_seg_customers
+order by number_customers desc;
+
+-- Work with only temporary table to shorten the code
+/* Can't modity data in temporary */
+
+select *
+from #local_table
+
+-- Drop temporary table to modify the code and re-create the temporary table
+
+drop table #local_table
