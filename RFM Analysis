@@ -14,7 +14,7 @@ with table_rfm as(
     where sub_category = 'Electricity' and message_id = 1 -- only for successful orders
     group by customer_id
 )
--- Step 2: percentile position
+-- Step 2: Percentile position
 
 , table_rank as(
     select *
@@ -24,7 +24,7 @@ with table_rfm as(
     from table_rfm
 )
 
--- Step 3: categorize by 4 tiers
+-- Step 3: Categorize by 4 tiers
 
 , table_tier as (
     select *
@@ -48,7 +48,7 @@ with table_rfm as(
     from table_tier
 )
 
--- Step 4: segmentation by customers' behaviors
+-- Step 4: Segmentation by customers' behaviors
 
 , table_segment as (
     select *
@@ -67,10 +67,11 @@ with table_rfm as(
 )
 , table_seg_customers as(
     select segment 
-        , count(customer_id) number_customers
+        , count (customer_id) number_customers
     from table_segment
     group by segment
 )
+
 -- Save as temporary table_local
 select *
     , cast (number_customers as decimal) / sum(number_customers) over () ratio
@@ -79,7 +80,7 @@ from table_seg_customers
 order by number_customers desc;
 
 -- Work with only temporary table to shorten the code
-/* Can't modity data in temporary */
+/* Can't modity data in temporary table */
 
 select *
 from #local_table
